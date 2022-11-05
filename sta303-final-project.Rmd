@@ -1,0 +1,996 @@
+---
+title: "Insights for MINGAR's Marketing and Product Considerations"
+subtitle: "A statistical analysis on user profile and deficiency investigation for MINGAR devices"
+author: "Report prepared for MINGAR by Highland Consulting Group"
+date: 2022-04-07
+lang: "en"
+output:
+  pdf_document:
+    template: report.tex
+    toc: true
+    toc_depth: 2
+header-includes:
+   - \usepackage{caption}
+   - \captionsetup[figure]{font=small}
+titlepage: true
+titlepage-color: "6C3082"
+titlepage-text-color: "FFFFFF"
+titlepage-rule-color: "FFFFFF"
+titlepage-rule-height: 2
+---
+
+```{r, message = FALSE, echo=FALSE, warning=FALSE}
+# Set up any libraries you need
+library(tidyverse)
+
+library(ggplot2)
+library(ggpubr)
+library(cowplot)
+library(ggiraphExtra)
+library(gridExtra)
+
+library(knitr)
+library(kableExtra)
+
+library(lme4)
+library(lmtest)
+```
+
+```{r load ,include=FALSE}
+# load data
+cust_info <- read_rds("data/cust_info.Rds")
+new_cust_info <- read_rds("data/new_cust_info.Rds")
+cust_clean <- read_rds("data/cust_clean.Rds")
+```
+
+\newpage
+# Executive summary
+
+## Backgroud & Aim
+
+MINGAR is a Canadian company developing towards high-end outdoor fitness trackers. To overcome its biggest competitor, Bitfit, who focuses on more economic products, MINGAR expanded its market share by innovating devices with new function and more affordable prices. Thus, it is crucial for MINGAR to understand its user portrait for both new and traditional devices. Customer satisfaction is likewise an important indicator to compete with Bitfit. As MINGAR received comments from customers about the device’s tendency to malfunction on darker skin, we will analyze the influence of skin color on product performance. Therefore, this report uses customer data since August 2015 and device detection sleep data in January 2022 to explore MINGAR’s customers distributions for different types of devices, as well as factors that are related to the triggering of quality flags, particularly for sleep score recordings. 
+
+
+## Key Findings
+
+The results of the report are summarized below.
+
+- Consumers younger than 30 years old and older than 60 years old prefer the newly developed Active/Advance devices as shown in Figure 1.A, while others who aged between 30 to 60 are more inclined to traditional products.
+
+- The launch of Active/Advance devices boosts the number of customers. Specifically, Figure 1.B demonstrates buyers with income around \$50,000 and \$60,000 are attracted. Additionally, customers with higher income (> \$80,000) favor traditional products more.
+
+- From Figure 1.C, Ontario, Alberta, and Quebec provide most demands of devices, so we can consider marking these provinces as the main markets. Precisely, customers in Quebec purchases twice as much new devices as traditional devices, while customers in Alberta prefers traditional devices slightly more.
+
+```{r, fig.cap = "Density plots of customer's median income and age & Barplot of customers by region", fig.width=13, fig.height=3.1,echo=FALSE, message=FALSE, warning=FALSE}
+# key finding figures for the first part
+p_income <- cust_info %>%
+  ggplot(aes(x=Median_income, fill=Active_Advance))+
+  geom_density(alpha=0.5)+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  xlim(25000,120000)+
+  theme_minimal()+
+  labs(x="Customer's Income", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+p_age <- cust_info %>%
+  ggplot(aes(x=age, fill=Active_Advance))+
+  geom_density(alpha=0.5)+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  theme_minimal()+
+  labs(x="Customer's Age", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+p_region <- cust_info %>%
+  ggplot(aes(x=Region, fill=Active_Advance))+
+  geom_bar(position = "dodge")+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  theme_minimal()+
+  coord_flip()+
+  labs(x="Customer's Regional Address", y="Number of Customer", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+p <- arrangeGrob(p_age, p_income, p_region,
+             ncol = 2, nrow = 2,
+             layout_matrix = rbind(c(1,3), c(2,3)))
+
+as_ggplot(p) + 
+  draw_plot_label(label = c("A", "B", "C"),
+                  x = c(0, 0, 0.5), y = c(1, 0.5, 1))
+```
+
+- In general, customers with darker skin have more flags on their devices as shown in Figure 2.A. The average flag rate for a light-skinned customer is only nine percent of that of a dark-skinned customer. 
+
+- From the table in Figure 2 below, younger customers have higher flag counts in comparison to older people but the difference is small. The average number of flags for a customer under 20 years old with dark skin is about 14 times.
+
+- The difference in sex, gender, location and device type has little effect on the flag counts.
+
+
+```{r, fig.cap = "Boxplot and summary table of device flags for different emoji users and age groups", fig.width=15, fig.height=4,echo=FALSE, message=FALSE,warning=FALSE}
+# key finding figures for the second part
+boxplot1 <- cust_clean %>% ggplot(aes(x = emoji, y = flags, fill = emoji)) +
+  geom_boxplot() +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(x = "skin tone", caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+table1 <- cust_clean %>% 
+  group_by(emoji) %>% 
+  summarize(mean = round(mean(flags),2), median = median(flags), .groups = "drop") %>% 
+  ggtexttable(rows = NULL)
+
+boxplot2 <- boxplot1 + annotation_custom(ggplotGrob(table1),
+                                         xmin = 0.5, ymin = 15, xmax = 8)
+
+age_emoji <- cust_clean %>% 
+  group_by(emoji, age_group) %>% 
+  summarise(mean = round(mean(flags),2))
+
+age_emoji_table <- age_emoji %>% 
+  pivot_wider(id_cols = emoji, names_from = age_group, values_from = mean) %>% 
+  ggtexttable(rows = NULL)
+
+ggarrange(boxplot2, age_emoji_table,
+          labels = c("A", "Table of mean flags count by age and emoji"), 
+          ncol = 2, nrow = 1)
+```
+
+
+## Limitations
+
+- Since customers’ information is not disclosed completely, we employ the median income of each census subdivision to represent the income of each customer by matching the postal code. However, this information is not completely accurate, and we may recognize that numerous customers are sharing “the same income”.
+
+- The age of each customer is acquired by simple subtraction between the current year and each buyer’s year of birth, which may cause some degree of misleading results, because the customer may not necessarily be purchasing the devices at their current age.
+
+- As customers may feel a lack of privacy by straight-forwardly asking about their ethnicities, we use the skin tones of the emojis when customers use the social component of MINGAR app as an identifier of their ethnicities. This may lead inaccurate information on the skin tone of each customer and thus making our analysis less reliable.
+
+- Climate factors such as temperature, humidity level and customer-level factors such as height, weight and are not considered due to inadequate data. More variables would like to be provided to discover more factors that affect the performance of the MINGAR devices and to uncover more potential deficiencies.
+
+
+
+\newpage
+# Technical report
+
+## Introduction
+
+MINGAR recently released the new lines of wearables fitness trackers — “Active & Advance” products to grow in the Canadian market. The marketing and social media team want to get the better understanding of user profiles of this new product and eliminate the hidden dangers or complaints about racial discrimination.
+
+Thus, the purpose of the report is to address their concerns about the direction of its new product in the fitness tracking wearable devices market regarding its customer groups as well as investigating the reasons behind the inaccurate sleep scores of its devices for specific customer segments based on provided customers’ information data, device data, median income data through Census Mapper API, and Postcode conversion file. 
+
+The report is organized as follows: in Data section (data wrangling and exploratory data analysis), we describe user profiles on traditional and latest Active & Advance devices together with the characteristics of customers who have product quality issues. Model selection, model assumption checking, and interpretation are presented and commented in Method section. In Discussion section, we conclude our findings and come up with strengths and limitations of our analysis.
+
+### Research questions
+
+In particular, the following research questions are of interest to this report:
+
+- What are the customer distributions of different types of MINGAR devices and whether the company's newly developed devices have attracted new customers with diverse characteristics?
+- What are some factors that are causing the appearances of quality flags during sleep sessions that are monitored by MINGAR devices? Are numbers of quality flags related to skin tone?
+
+\newpage
+## Inspection on Association between Consumers Information and MINGAR devices
+
+### Data
+
+### Data Wrangling
+
+In order to understand and examine any potential differences in MINGAR’s customer groups, we will be focusing on several customers and device characteristics, comparing their relationships and identifying potential changes. Nevertheless, before the analysis process, we will be wrangling some data sets received from MINGAR, extracting and improving to an ultimate data set that helps simplify the analysis in the future. 
+
+As we are interested in the social profile of MINGAR’s customers with their choice of devices, some specific information should be included. By reviewing the raw data, we decide that most of the customers’ personal information is crucial for our analyzing, such as their income, gender, age, and provincial address. Such information will not only provide us with customers’ distribution but also suggest us where to open up more stores to increase our shares of market.
+
+On the other hand, devices information is also crucial for our understanding as it provides us with the preferences of customers, helping us to recognize whether MINGAR is innovating in the favor of consumers. In this case, we will need the names and series of devices with their recommended retail prices. We will be including some minor information such as whether a specific device is waterproof or not. Nevertheless, as mentioned before, we aim to detect whether MINGAR is developing its products in the favor of market. When doing so, we shall need to categorize the devices by stamping them with “Active/Advance” or “Traditional” labels. 
+
+In the end, we need to attach all fundamental raw data mentioned above to our ultimate data set. With everything prepared, we are now ready to manipulate our 19045 pieces of customer information.
+
+
+### Exploratory Data Analysis
+
+```{r, echo=FALSE}
+# displaying the first five rows of customer information that are important
+show <- cust_info %>%
+  select(cust_id, sex, Median_income, device_name, age, Active_Advance, Region)
+show <- head(show,5)
+# use kable to display
+kable(show, caption = "The first five Customers for the cleaned customer info data")%>%
+  kable_styling(font_size = 6,
+                latex_options = "HOLD_position")
+```
+
+From Table 1 above, we show five customers' partial information to give a better understanding of what we are working on. In the table specifically, we have the gender, age, and provincial address of each customer, represented by their customer id, and we display the name of devices they purchased. 
+
+\
+
+```{r, fig.cap = "Barplot and Histogram Displaying Distribution of Customers on Differnet Device Series and Retail Price", fig.width=11, fig.height=5, echo=FALSE, message=FALSE}
+# shows the distribution of customers on different device lines
+p_tot <- cust_info %>%
+  ggplot(aes(x=line, fill=line))+
+  geom_bar()+
+  scale_fill_manual(values=c("#7F532F","#C4A484","#E1CCB5","#F2D2BD"))+
+  theme_minimal()+
+  labs(x="Device lines", y="Number of customers", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+# show the distribution of customers on the recommended retail price of devices, grouping by the device lines
+p_tprice <- cust_info %>%
+  ggplot(aes(x=retail_price, fill=line))+
+  scale_fill_manual(values=c("#7F532F","#C4A484","#E1CCB5","#F2D2BD"))+
+  geom_histogram(bins=15)+
+  theme_minimal()+
+  labs(x="Recommended retail Price",y="Number of customers", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+# shows the distribution of customers on new and traditional device types
+p_act <- cust_info %>%
+  ggplot(aes(x=Active_Advance, fill=Active_Advance))+
+  geom_bar()+
+  scale_fill_manual(values=c("#7F532F","#E1CCB5"))+
+  theme_minimal()+
+  labs(x="Device types", y="Number of customers", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+# show the distribution of customers on the recommended retail price of devices, grouping by new or traditional device types
+p_acprice <- cust_info %>%
+  ggplot(aes(x=retail_price, fill=Active_Advance))+
+  geom_histogram(bins = 15)+
+  scale_fill_manual(values=c("#7F532F","#E1CCB5"))+
+  theme_minimal()+
+  labs(x="Recommended retail Price",y="Number of customers", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+ggarrange(p_tot, p_act,p_tprice, p_acprice, 
+          labels = c("A", "B", "C", "D"),
+          ncol=2, nrow=2)
+```
+
+To further explore MINGAR’s customers' data, we create four graphs above to help illustrate and understand the distribution. Figure 3.A displays the spread of customers in different device lines. Obviously, there exist four device lines currently, and Advance and Run lines are the two most popular lines of products, each receiving around 8000 customers while less than 500 customers prefer iDOL device. Through Figure 3.C, we present the distribution of customers by the recommended retail price of device lines. The graph indicates that the spread of customers purchasing more expensive or more affordable device is about average.
+
+Figure 3.B and 3.D particularly discusses the customers through the general types of devices. For Figure 3.B, we have a more comprehensible display on the distribution of customers towards the traditional or new (Active/Advance) types of devices. The graph shows that more than 10000 customers purchased the new devices, suggesting that the innovative products are a success in the market. Figure 3.D demonstrates that the newly developed Active/Advance devices are generally cheaper, having a price of fewer than 200 dollars. This might be a reason that most customers purchased these devices. However, we still need to further elaborate on our exploration of customer groups.
+
+\
+
+```{r income, fig.cap = "Density graph and Histogram Displaying Distribution of Customers on Device types Based on Income", fig.width=11, fig.height=3 , echo=FALSE, warning=FALSE}
+# density figure showing customers' distribution by their income. 
+p_income <- cust_info %>%
+  ggplot(aes(x=Median_income, fill=Active_Advance))+
+  geom_density(alpha=0.5)+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  xlim(25000,120000)+ # some outline customers are eliminated to provide better visualization
+  theme_minimal()+
+  labs(x="Customer's Income", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+#histogram figure displaying customers' distribution by income
+inc_his <- cust_info %>% 
+  ggplot(aes(x = Median_income)) +
+  geom_histogram(color = "black", fill = "#E1CCB5", bins = 30) +
+  xlim(25000,150000)+
+  facet_wrap(~Active_Advance) +
+  theme_minimal() +
+  labs(x="Customer's Income", y="Number of customers",
+       caption = "Created by Qianyu Fan, Highland Consulting Group")
+
+ggarrange(p_income, inc_his, 
+          labels = c("A", "B"),
+          ncol = 2)
+```
+
+Then, we check whether the sales of product type are affected by the income of customers. Figure 4.A presents a density graph of the spread of general types of devices purchased by customers with different incomes. It describes that customers with income of more than 75,000 dollars prefer to purchase the traditional devices while customers with income less than 75,000 dollars prefer the new Active/Advance devices. Especially for customers with income around 50,000 dollars, the purchases of new devices are about twice the traditional ones. This result match with the previous Figure 3.D, since new devices are generally more affordable than the traditional ones. Next, Figure 4.B gives a more patent view on the purchases of devices. For instance, customers with incomes between 45,000 dollars and 75,000 dollars contribute the most purchases. We can conclude that the newly invented types of devices attract more low income buyers.
+
+```{r age, fig.cap = "Density graph and Histogram Displaying Distribution of Customers on Device types Based on Age", fig.width=11, fig.height=3 , echo=FALSE, warning=FALSE}
+# Distribution of customers by their age for the two types of devices
+p_age <- cust_info %>%
+  ggplot(aes(x=age, fill=Active_Advance))+
+  geom_density(alpha=0.5)+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  theme_minimal()+
+  labs(x="Customer's Age", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+# Distribution of customers by their age for the newly developed Active/Advance devices only, organized by device name
+age_distrituion <- new_cust_info %>% 
+  ggplot(aes(x = age, fill = device_name)) +
+  scale_fill_manual(values =c("#483C32","#7F532F", 
+                              "#C4A484", "#EAECEE","#F2D2BD")) +
+  geom_density(alpha = 0.4) + 
+  theme_minimal()+
+  labs(x="Customer's Age",
+       caption = "Created by Qianyu Fan, Highland Consulting Group")
+
+ggarrange(p_age, age_distrituion, labels = c("A", "B"), ncol = 2)
+
+
+```
+
+By checking whether the age of customers is related to the types of devices they buy, we get a clearer understanding of customer profiles. From Figure 5.A, we see that people between the age of 30 to 60 favor the traditional devices while customers younger than 30 years old or older than 60 years old bought more Active/Advance devices. The outcome indicates that MINGAR indeed increases its share of the market with diversifying the customer groups through new products. Figure 5.B is a precise graph focused on each specific newly developed device. From the graph, we discover that Active Alpha is most preferred by people around the age of 20 or age of 70, while Advance and Advance 2 are preferred by the middle-aged group.
+
+\
+
+```{r sex, fig.cap = "Barplot Displaying Distribution of Customers on Device types Based on Gender", fig.width=11, fig.height=3, echo=FALSE, warning=FALSE, message=FALSE}
+# distribution of customer for new and traditional devices based on sex
+p_sex <- cust_info %>%
+  ggplot(aes(x=sex, fill=Active_Advance))+
+  geom_bar(position="dodge")+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  theme_minimal()+
+  coord_flip()+
+  labs(x="Customer's Gender", y="Number of Customer", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+# new customers: distribution of specific new devices based on sex
+sex_dis <- new_cust_info %>% 
+  group_by(device_name, sex) %>% 
+  summarise(N = n_distinct(cust_id)) %>% 
+  ggplot(aes(x = device_name, y = N, fill = sex)) +
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values =c("#7F532F", "#C4A484", "#E1CCB5")) +
+  theme_minimal()+
+  labs(x="New Devices' Name", y="Number of Customer", 
+       caption = "Created by Qianyu Fan, Highland Consulting Group") +
+  coord_flip()
+
+ggarrange(p_sex, sex_dis, labels = c("A", "B"), ncol = 2)
+```
+
+
+```{r, echo=FALSE}
+# Table showing the amount of customers purchasing each devices based on their gender
+num <- new_cust_info %>% 
+  group_by(device_name, sex) %>% 
+  summarize(Number = n_distinct(cust_id), .groups = "drop")
+
+num_table <- num %>% 
+  pivot_wider(id_cols = device_name, names_from = sex, values_from = Number)
+
+kable(num_table, 
+      caption = "Amount of customer purchasing new devices, by gender") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+From Figure 6.A, we get a view of purchases of customers in different sex group. We see that more than half of the customers are female, yet there seems to be no relationship between the product types and sex. The purchases of new devices are slightly more for all sex customers. Figure 6.B and Table 2 display the distribution of new customers, yet there exists zero patterns and preferences for each sex group, only Advance 2 device is greatly favored by all customers.
+
+```{r region, fig.cap = "Barplot Displaying Distribution of Customers on Device types Based on Regions", fig.width=10, fig.height=4, echo=FALSE, warning=FALSE}
+# Barplot displaying the regional distribution of customers for the two types of products
+p_region <- cust_info %>%
+  ggplot(aes(x=Region, fill=Active_Advance))+
+  geom_bar(position = "dodge")+
+  scale_fill_manual(values=c("#7F532F","#F2D2BD"))+
+  theme_minimal()+
+  coord_flip()+
+  labs(x="Customer's Regional Address", y="Number of Customer", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+# Boxplot showing customers' income information for each region
+box <- cust_info %>%
+  ggplot(aes(x=Region, y=Median_income))+
+  geom_boxplot(fill="#7F532F")+
+  theme_minimal()+
+  coord_flip()+
+  labs(x="Customer's Regional Address", y="Customer's Income", 
+       caption = "Created by Chenyang Li, Highland Consulting Group")
+
+ggarrange(p_region, box, labels = c("A", "B"), ncol = 2)
+```
+
+Lastly, by viewing the postal code of customers, we can easily group them to their provincial addresses. Figure 7.A illustrates the distribution of customers by province. Visibly, most of the purchases come from Ontario, Quebec, and Alberta, and there exists a weak trend of preferences in the graph. We notice that customers from Alberta slightly prefer traditional devices more while Ontario customers slightly prefer new types of devices more. Moreover, Quebec customers purchase twice the number of new devices than traditional devices. 
+
+We wonder whether this weak trend occurred in Figure 7.A implies an association between the provincial address and customers’ income. Thus, in building Figure 7.B, we examine the precise relationship between regions and income. We mainly focus our discovery on Ontario, Alberta, and Quebec as they have the most customers. The graph shows that customers from Quebec have a median income of about 50,227 dollars while the median income for Alberta is 97,334 dollars; Alberta customers generally earn more than Quebec customers. Such finding implies a relationship between region and income: Quebec customers purchases twice as many new devices as traditional devices, while Alberta customers prefer traditional devices slightly more. Nevertheless, further analysis is needed.
+
+
+### Model
+
+On top of the standard exploration on customers information above, we now need to further analyze customers distribution through modeling. We aim to discover what factors of buyer will affect their preference of MINGAR’s products, and through this difference, we can indirectly get a more specific understanding in information of MINGAR’s new customers.
+
+### Model Selection
+
+The purpose of our study is to inspect customers’ covariates that may affect their choice of purchasing traditional or newly developed Active/Advance devices. Thus, the record of product types each customer purchased (in form of 1s and 0s) should be the response of our study. Since MINGAR is encouraged to expand further in the market, we will call each purchase of a new device a success (1), and the purchase of a traditional device a failure (0). When using binary code as the response, it indicates that we will be creating a logistic regression. In this case, the response is not normally distributed, yet we recognized that there exists no correlation between each value as the purchases of devices are collected from independent customers. Thus, a generalized linear model will be used for analysis. 
+
+Before we start to fit and find our perfect model, we notice that the size of some factors is at huge differences, and we will need to first rescale median income and age before performing models.
+
+```{r rescale, echo=FALSE}
+# Normalized some covariates
+cust_info$scale_median_inc <- scales::rescale(cust_info$Median_income)
+cust_info$scale_age <- scales::rescale(cust_info$age)
+```
+
+First, we fit Model 1, employing customers’ income as the covariate of the model. As MINGAR mentioned, their new devices aim to be more affordable than the traditional ones. Thus, by viewing the income density graph placed in the previous section, we believe that the customers’ income should be associated with the selling of Active/Advance products. Moreover, the age density graph also indicates that new devices attract more customers with specific age ranges. Therefore, we want to include the income and age of customers as the predictors for Model 1. This became the basic model for our analysis. 
+
+Then, we want to test whether there exists an interaction effect between the income and age of customers. We add the interaction effect between the two predictors to create Model 2. To investigate the significance of the interaction effect, we use the likelihood ratio test for comparison. By comparing the reduced model and full model, Model 1 and Model 2, we received a p-value of 0.498 (which is greater than 0.05), suggesting that the Model 2 is not better than Model 1. Thus, we do not need to consider this interaction effect, and we should keep Model 1.
+
+Next, although we did not find any strong association between the sex of customers and purchases of new devices, we would like to add the sex of customers as a potential predictor in Model 3 for examination. Again, we use the likelihood ratio test to compare Model 1 and Model 3, obtaining a p-value of 0.222 (greater than 0.05), indicating that sex is not associated with the purchases of types of devices.
+
+The graphs in the previous section demonstrate a relationship between purchases of new products with the regional address of customers. Therefore, we add a potential covariate, region, to Model 1 to generate Model 4. Through the likelihood ratio test, we get a p-value equals to 7.112e-12, which is about 0. This result means that the region is strongly significant to the purchases of new products. Ergo, Model 4 is the best model for now.
+
+In the end, we want to know whether there exits an interaction effect between the income and region of customers. Adding such effect to Model 5, we then compare it with Model 4, receiving a p-value of 0.1531 (greater than 0.05). This suggest that the interaction effect between income and regions is not significant to the association. As a result, we will be using the reduced form, Model 4, as our ultimate model for analysis. The models and results of the likelihood ratio test are listed below:
+
+```{r, include=FALSE, warning=F}
+# the five generalized linear models with different covariates and interacting effects
+mod1 <- glm(Act_count ~ scale_median_inc + scale_age, family=binomial("logit"), cust_info)
+mod2 <- glm(Act_count ~ scale_median_inc + scale_age + scale_median_inc:scale_age, family=binomial("logit"), cust_info)
+mod3 <- glm(Act_count ~ scale_median_inc + scale_age + sex , family=binomial("logit"), cust_info)
+mod4 <- glm(Act_count ~ scale_median_inc + scale_age + Region, family=binomial("logit"), cust_info)
+mod5 <- glm(Act_count ~ scale_median_inc + scale_age + Region + scale_median_inc:Region, family=binomial("logit"), cust_info)
+
+#comparing the models through likelihood ratio test, and get that the best model is mod4
+#lrtest(mod1, mod2)
+#lrtest(mod1, mod3)
+#lrtest(mod1, mod4)
+#lrtest(mod4, mod5)
+
+# information important for model interpretation
+#conf4 <- confint(mod4)
+#exp(conf4)
+#exp(modr4$coefficient)
+
+```
+
+```{r,echo=FALSE}
+# table displaying the models we select
+tab <- matrix(c("Device Types ~ scaled income + scaled age", 
+                "Device Types ~ scaled income + scaled age + scaled income:scaled age", 
+                "Device Types ~ scaled income + scaled age + sex", 
+                "Device Types ~ scaled income + scaled age + Region", 
+                "Device Types ~ scaled income + scaled age + Region + scale income:Region"), 
+              ncol=1, byrow=TRUE)
+colnames(tab) <- c('Model')
+rownames(tab) <- c('Model1: ','Model2: ', 'Model3: ', 'Model4: ', 'Model5: ')
+tab <- as.table(tab)
+kable(tab,
+      caption = "Models construted by different predictors") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r,echo=FALSE}
+# table showing the results of the four likelihood ratio tests
+tab1 <- matrix(c("Model1", "Model2", 0.498,
+                 "Model1", "Model3", 0.222,
+                 "Model1", "Model4", 7.112e-12,
+                 "Model4", "Model5", 0.1531), 
+               ncol=3, byrow=TRUE)
+colnames(tab1) <- c('Reduced Model', "Full Model", "P-value")
+
+tab1 <- as.table(tab1)
+kable(tab1,
+      caption = "P-values for likelihood ratio tests among the 5 models") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Table 5 displays the estimated coefficient and significance level analyzed by Model 4. We will further explain the representation of the coefficient later, yet we can now recognize that the p-values for the income and age of customers are around 0, suggesting that both covariates is strongly associated with the purchases of new products. Additionally, in general, we have strong evidence against the null hypothesis that adding these predictors does not improve our model, suggesting region is strongly associated with the prediction of product type. 
+
+```{r, echo=FALSE}
+#table showing the summary of mod4, specifically focuses on estimated coefficient and p-value. Estimated coefficient will be explained during model interpretation. 
+sum4_coe <- summary(mod4)$coefficients
+sum4_re <- summary(mod4)$varcor
+
+kable(sum4_coe,
+      caption = "The coefficients result of final model.") %>%
+      kable_styling(latex_options = "HOLD_position")
+
+```
+
+
+### Model Assumptions
+
+The outcome is a binary variable 1 vs. 0, with indicating Acitve/Advance devices and 0 indicates traditional devices, so this meets the binary response assumption for our logistic model in the previous model selection. Also, response value is independent of one another because of customers' randomness. We then have to check linearity assumption and multicollinearity to confirm if it is a proper fit. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Linearity scatter plot",fig.width=5, fig.height=2, cache = TRUE}
+
+probabilities <- predict(mod4, type = "response")
+data <- tibble(cust_info$scale_median_inc, cust_info$scale_age)
+predictors <- colnames(data)
+data <- data %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+ggplot(data, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5, col = "#C4A484") +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Residuals vs. Fitted Values plot",fig.width=5, fig.height=3}
+plot(mod4, 1, col = "#C4A484") 
+```
+
+
+The linearity assumption is satisfied when there is a linear relationship between the transformed response and the explanatory variables. The smoothed scatter plots show that variables scaled age and scaled median income are all somehow linearly associated with the device choices outcome in logit scale. What's more, we also draw the Residuals vs. Fitted values Plot. Two lines of points appear since we predict a probability for device where Active & Advance products taking values of 1 and others taking 0. The line in Figure 9 is almost near the 0, thus we can conclude the linearity assumption is likely satisfied.
+
+Moreover, it's significant to check the multicollinearity. A VIF value that exceeds 5 or 10 indicates a problematic amount of collinearity. Luckily, there is no collinearity: all variables have a value of VIF well below 5. Thus, there is no high intercorrelations among the predictors.
+
+```{r, echo=FALSE}
+vif_table <- car::vif(mod4)
+kable(vif_table,
+      caption = "VIF table for the final model") %>%
+      kable_styling(latex_options = "HOLD_position")
+```
+
+### Model Interpretation
+
+After considering the possible affected predictors, interactions and checking the assumptions, we finalize our model as follows:
+$$logit(p) = log(\frac{p}{1-p}) = \beta_0 + \beta_1X_{scale\_median\_inc} + \beta_2X_{scale\_age} + \beta_3I_{RegionQuebec}$$ 
+where
+
+- $\beta_0$ = 0.04, $\beta_1$ = -0.23, $\beta_2$ = 0.38, and $\beta_3$ = 0.32;
+- $p$ is the estimated probability that individual would buy Active/Advance product;
+- $X_{scale\_median\_inc}$ represents the scaled median income variable from 41880~195570 to 0~1;
+- $X_{scale\_age}$ represents the scaled age variable, which scales the age from 18~92 to 0~1;
+- $I_{RegionQuebec}$ represents the region variable where Quebec is 1 and reference Alberta is 0.
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, cache = TRUE}
+# exp estimates
+ests_1 <- format(round((exp(summary(mod4)$coeff)[,1]),4), nsmall = 2)
+
+# exp CI
+ci_1 <- confint(mod4)
+cis_1 <- format(round(exp(ci_1),4), nsmall = 2)
+cis_table_1 <- str_c("(", trimws(cis_1[,1]), ", ", cis_1[,2], ")")
+
+inf_table_1 <- cbind(ests_1, cis_table_1)
+inf_table_1 <- rbind(inf_table_1[1:3,], inf_table_1[11,])
+rownames(inf_table_1) <- c("Baseline odds ratio", "Scaeled median income", "Scaled age", "Quebec")
+colnames(inf_table_1) <- c("Estimate", "95% CI")
+
+knitr::kable(inf_table_1,
+             caption = "Exponentiated Estimated coefficients and confidence interval for the final model", 
+             align = c("r", "r"))%>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Table 7 summarizes the estimated coefficients and confidence intervals for our model after exponentiation. The exponentiated estimated intercept of our model is 1.61, which means the probability of an 18-year-old (scaled age = 0) individual in Alberta who has a median income about \$41,880 (scaled median income = 0) will buy Active/Advance product is 61.7%. 
+
+The estimated coefficient of scaled median income is -2.35 and its exponentiated estimated coefficient is 0.096. Hence, holding other predictors constant, if the median income increases from \$41,880 to \$195,570 (i.e. the scaled median income increases by 1), the odds of buying Active/Advance products is 0.096 times lower than not buying. With 95% confidence, the related odds ratio is between 0.06 and 0.16. 
+
+Besides, for scaled age, its exponentiated estimated coefficient is 1.46. Holding other predictors constant, the odds of buying Active/Advance products versus not buying is 1.46 times if age increases from 18 to 92 (i.e. the scaled age increases by 1). With 95% confidence, the related odds ratio is between 1.28 and 1.65. 
+
+Finally, we can interpret the coefficient on Quebec by its exponentiated estimated coefficient 1.37 (95% CI = (1.16, 1.61)). It indicates that the odds of customers in Quebec try to purchase Active/Advance products is one time more compared to the odds of customers in Alberta when controlling scaled median income and scaled age.
+
+In a nutshell, for instance, if we assume 18-year-old customers who are in Quebec and whose median income is \$41,880, the estimated probability of purchasing Active/Advance product is 68.9%; while the probability for those who are in Alberta is 61.7%.
+
+\newpage
+## Potential Deficiency of MINGAR Devices in Sleep Score Recording
+
+### Data 
+### Data Wrangling
+
+For the data cleaning, since the original data contains only the customer's sleep information(sleep duration and quality flags) in January, we merge it with the name of the device used to monitor sleep and the customer's personal information according to each customer's id. Then, we add the age variable based on data of birth of each customer and divide it into 7 groups to clearly see the features of different age groups. Also, in order to better apply the model after, we rescale the age factor from 18 and 92 years old to range between 0 and 1. Furthermore, for a more intuitive look at the customer's emoji usage, we create the emoji variable indicating different skin colors provided by Unicode Consortium (Unicode, Inc., 2022) instead of the unicode. Next, we removed the missing value from the data in the sex, pronoun, and emoji variables because the reason for this is that the customer may not want to provide personal information or may have used the default emoji setting rather than a recording error.
+
+We then dropped unwanted columns, leaving 12 variables: the skin tone of emoji, id, age, scaled age, age group, sex, pronouns, and region of the customer, device name, date and duration of sleep session and count of quality flags. Finally, 15243 observations are retained, and I save them in the cleaned dataset for subsequent analysis. The first 5 rows can also be checked in the below Table 8.
+
+```{r,echo=FALSE}
+# The first five observations
+kable(head(cust_clean, 5),
+      caption = "The first five observations from the cleaned customer sleep data.") %>%
+  kable_classic()%>%
+      kable_styling(font_size = 4)%>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+### Exploratory Data Analysis
+```{r, fig.cap = "Historgram and scatter plot of device flags by different emoji user", fig.width=15, fig.height=4,echo=FALSE, message=FALSE, warning=FALSE}
+hist <- cust_clean %>% ggplot(aes(x = flags, fill = emoji)) +
+  geom_histogram(bins = 30) +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+dot1 <- cust_clean %>% ggplot() +
+  geom_point(aes(x = date, y = flags, color = emoji)) +
+  geom_smooth(aes(x = date, y = flags, color = emoji)) +
+  scale_color_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+ggarrange(hist, dot1,
+          labels = c("A", "B"), 
+          ncol = 2, nrow = 1)
+```
+
+Now we perform further analysis of different factors. The histogram of the number of quality flags, Figure 10.A, reveals a right skewed pattern and the range is from 0 to 24 with many of the devices reports between 1 and 5 flags during the sleep session. This also indicates it has a Poisson distribution, which satisfies the assumption of the subsequent model. Moreover, we can see from the histogram that flags seem to be reported more often when the customer uses a darker-skinned emoji. We also checked the flags for any anomalies, as Figure 10.B shows, we don't find any particular climax or drop in January.
+
+```{r, fig.cap = "Boxplot and scatter plot of device flags for different emoji users and sleep durations ", fig.width=13, fig.height=5,echo=FALSE}
+boxplot1 <- cust_clean %>% ggplot(aes(x = emoji, y = flags, fill = emoji)) +
+  geom_boxplot() +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+table1 <- cust_clean %>% 
+  group_by(emoji) %>% 
+  summarize(mean = round(mean(flags),2), median = median(flags), .groups = "drop")
+table1 <- ggtexttable(table1 , rows = NULL)
+
+boxplot2 <- boxplot1 + annotation_custom(ggplotGrob(table1),
+                                         xmin = 0.5, ymin = 15, xmax = 8)
+
+dot2 <- cust_clean %>% ggplot(aes(x = duration, y = flags)) +
+  geom_point(color = "#C4A484") +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+ggarrange(boxplot2, dot2, 
+          labels = c("A","B"),
+          ncol = 2, nrow = 1) 
+```
+
+
+Then we further look at the relationship between flags and emoji. As shown in Figure 11.A, the devices of those customers who use dark skinned emoji have the most flags with mean and median at 12 times, while for those who use light colored emoji, their devices have a lower number of flags, which matches the trend we see above. To see if the duration affects the number of flags, we also check their scatter plot. It can be seen from Figure 11.B that more sleep duration seems to have a higher flag count, so we may need to consider the duration as an offset in the model afterwards.
+
+```{r, fig.cap = "Boxplots of device flags for sex, gender, age groups and devices by different emoji users", fig.width=16, fig.height=6,echo=FALSE}
+boxplot3 <- cust_clean %>% ggplot(aes(x = sex, y = flags, fill = emoji)) +
+  geom_boxplot() +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+boxplot4 <- cust_clean %>% ggplot(aes(x = pronouns, y = flags, fill = emoji)) +
+  geom_boxplot() +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+boxplot5 <- cust_clean %>% ggplot(aes(x = age_group, y = flags, fill = emoji)) +
+  geom_boxplot() +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+boxplot6 <- cust_clean %>% ggplot(aes(x = device_name, y = flags, fill = emoji)) +
+  geom_boxplot() +
+  scale_fill_manual(values =c("#483C32","#7F532F", "#C4A484", "#E1CCB5","#F2D2BD")) +
+  theme_minimal() +
+  labs(caption = "Created by Liuyi Pan, Highland Consulting Group")
+
+ggarrange(boxplot3, boxplot4, boxplot5, boxplot6,
+          ncol = 2, nrow = 2, 
+          labels = c("A","B","C","D"))
+```
+
+The four boxplots above show the relationship between sex, pronouns, age, device factor and flag based on different emoji users. As we can see in Figures 12.A and 12.B, there is no strong difference in the mean number of flags between the different sex and gender groups. Figure 12.C reveals that elder customers have less quality flags number. For Figure 12.D, it is worth noting that IDOL, RUN7 PLUS devices only monitoring customers with medium and medium light skin emoji, and RUN7 only served customers with dark skin emoji, which results in abnormally low and high flag counts. Except for these devices, the average flag counts for each device is similar.
+Again, all plots show the same tendency as above: customer with darker skin tone emojis have more quality flags on their devices.
+
+
+### Method
+
+### Initial model
+
+From Figure 10.A, we can see that number of quality flags increases as duration of sleep session increases. Like many Poisson distributions, the right-skewness of this graph suggests that number of times there was a quality flag during the sleep session is not normally distributed; we may consider to model with a Poisson distribution when **flag** is the response.
+
+Table 9 below summarizes the means and variances for number of quality flags based on each skin tone. For a Poisson regression model, the mean of the response should be equal to the variance. However, this table shows that the means of number of quality flags are smaller than variances within each group. Therefore, the "mean=variance" assumption of a Poisson regression model is violated, and overdispersion may occur, which may lead us to incorrect small p-values and thus choosing a more complicated model. To solve this problem, we use log of duration, which is the duration of each sleep session in minutes, as an offset in our model. 
+
+```{r,echo=FALSE}
+cust_summary <- cust_clean %>% 
+  group_by(emoji) %>% 
+  summarize(mean = round(mean(flags),3), var = round(var(flags),3), .groups = "drop")
+kable(cust_summary,
+      caption = "The mean and variance of the flags by different emoji users")%>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Thus, we first fit Model 1, a generalized linear mixed model (GLMM), with skin tones of emojis and customers' ids as predictors, and log(duration) as an offset. We use the skin tone of emojis as an identifier for the skin tone of ethnicity of the consumer. Here emoji is a fixed effect while customer id will be a random effect since there are multiple observations for a single customer id.
+
+
+### Model selection
+
+```{r, include=FALSE, cache = TRUE}
+# initial model
+model1 = glmer(flags ~ emoji + (1| cust_id), 
+               offset = log(duration), family='poisson', data = cust_clean)
+
+# add scaled age and sex
+model2 = glmer(flags ~ emoji + age_scale + sex + (1| cust_id), 
+               offset = log(duration), family='poisson', data = cust_clean, 
+               control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+
+# summary(model2)
+
+# add interaction terms
+model3 = glmer(flags ~ emoji + age_scale + sex + age_scale:emoji + sex:emoji + (1| cust_id), 
+               offset = log(duration), family='poisson', data = cust_clean, 
+              control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+
+# delete sex
+model4 = glmer(flags ~ emoji + age_scale + (1| cust_id), 
+               offset = log(duration), family='poisson', data = cust_clean, 
+               control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+
+# add other random effects: devices and region
+model5 = glmer(flags ~ emoji + age_scale+ sex + (1| cust_id) + (1| device_name) + (1|Region),
+               offset = log(duration), family='poisson', data = cust_clean, 
+            control = glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+
+# lrtest(model1, model2)
+# lrtest(model2, model3)
+# lrtest(model4, model2)
+# lrtest(model5, model4)
+# summary(model4)
+```
+
+We then add other two possible covariates, age and sex, as predictors for Model 2, and conduct a likelihood ratio test for these two models, with Model 1 being the reduced model and Model 2 being the full model. A p-value of 0.02825, which is less than 0.05, suggests that Model 2 is better.
+
+For Model 3, in order to see whether there is any effects between age, sex and emoji, we consider including the two interaction terms. By conducting a likelihood ratio test between Model 2 and Model 3, we choose Model 2 as suggested by an unsignificant p-value of 0.4253.
+
+Notice that for Model 2, the p-value for predictor sex is not significant (See Table 10 below). We then fit Model 4 by removing predictor sex. A p-value of 0.375 from the likelihood ratio test concludes there is no evidence against the hypothesis that the simpler model explains the data just as well, which indicates that sex of each customer is unnecessary to our Model.
+
+```{r, echo=FALSE}
+tab <- matrix(c("< 2e-16", "***","< 2e-16","***","< 2e-16","***","< 2e-16","***","< 2e-16","***",0.00744,"**",0.94282," ",0.17013," "), 
+              ncol=2, byrow=TRUE)
+colnames(tab) <- c('P-value','Significance Level ')
+rownames(tab) <- c('Intercept ','emojimedium_dark ','emojimedium ', 'emojimedium_light ', 'emojilight ', 'age_scale ','sexFemale ', 'sexIntersex')
+tab <- as.table(tab)
+kable(tab,
+      caption = "Significance levels of predictors of Model2") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Next, we see if adding random intercepts for different devices and customer's region will improve our model since there are multiple users in the same area and using the same type of device. The likelihood ratio test results a large p-value with 0.7429, so adding these two will not improve our model. Finally, we choose Model 4 as our final model and all fixed effects (emoji and age) are statistically important at 5% significant level as shown in Table 11. Also Table 12 provides the summary statistics for random effect (customer's id) with an variance of 0.00214. Although the variance is small, we have to take into account the correlation of having multiple sleep data for one customer, so we will keep it here. 
+
+```{r, echo=FALSE}
+sum4_coe <- summary(model4)$coefficients
+sum4_re <- summary(model4)$varcor
+
+kable(sum4_coe,
+      caption = "The coefficients result of final model.") %>%
+      kable_styling(latex_options = "HOLD_position")
+
+kable(sum4_re,
+      caption = "The random effects result of final model.") %>%
+      kable_styling(latex_options = "HOLD_position")
+```
+
+\
+
+Table 13 below summarizes the models discussed above:
+```{r,echo=FALSE}
+tab <- matrix(c("flags ~ emoji + (1| cust_id)", 
+                "flags ~ emoji + age_scale + sex + (1| cust_id)", 
+                "flags ~ emoji + age_scale + sex + age_scale:emoji + sex:emoji + (1| cust_id)", 
+                "flags ~ emoji + age_scale + (1| cust_id)", 
+                "flags ~ emoji + age_scale + sex + (1| cust_id) + (1| device_name) + (1|Region)"), 
+              ncol=1, byrow=TRUE)
+colnames(tab) <- c('Model')
+rownames(tab) <- c('Model1: ','Model2: ', 'Model3: ', 'Model4: ', 'Model5: ')
+tab <- as.table(tab)
+kable(tab,
+      caption = "Models construted by different predictors") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Table 14 below summarizes the p-values for likelihood ratio tests among the five models discussed above:
+```{r,echo=FALSE}
+tab1 <- matrix(c("Model1", "Model2", 0.02825,
+                 "Model2", "Model3", 0.4253,
+                 "Model4", "Model2", 0.375,
+                 "Model4", "Model5", 0.7429), 
+               ncol=3, byrow=TRUE)
+colnames(tab1) <- c('Reduced Model', "Full Model", "P-value")
+
+tab1 <- as.table(tab1)
+kable(tab1,
+      caption = "P-values for likelihood ratio tests among the 5 models") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+### Model Assumptions
+
+As we have discussed in Initial Model section, the Poisson response assumption is satisfied for our Poisson regression model, and the violation of "Mean = variance" assumption is improved by adding the log of duration as an offset to our model.
+
+We then have to check the independence and linearity assumption. Independence requires each observation is independent of one another. We do not have enough information of the data collection process, but it is reasonable for us to assume that each monitor of the sleep session is independent of one another, as each individually record should be recorded randomly. 
+For linearity assumption, it suggests that log of the observed mean number of quality flags is a linear function between emoji and age variables. Two linear pattern in Figure 13 below shows that there is a linear relationship between log of the observed mean number of quality flags and skin tones of emojis as well as age. Therefore, the linearity assumption is likely satisfied.
+
+```{r, fig.cap = "Scatter plots for the log of the mean flags by emoji and scaled age groups", fig.width=12, fig.height=4,echo=FALSE,message=FALSE}
+# check linearity assumption
+emoji_summary <- cust_clean %>% 
+  group_by(emoji) %>% 
+  summarise(mntotal = mean(flags), logmntotal = log(mntotal), n = n())
+
+sca1 <- emoji_summary %>% ggplot(aes(x = emoji, y = logmntotal)) +
+  geom_point()+
+  geom_smooth()+
+  xlab("Emoji color of the customer") +
+  ylab("Log of the empirical mean number in the flags") +
+  theme_minimal() +
+  labs(caption = "Created by Siyi Du, Highland Consulting Group")
+
+emoji_summary2 <- cust_clean %>% 
+  group_by(age_scale) %>% 
+  summarise(mntotal = mean(flags), logmntotal = log(mntotal), n = n())
+
+sca2 <- emoji_summary2 %>% ggplot(aes(x = age_scale, y = logmntotal)) +
+  geom_point()+
+  geom_smooth()+
+  xlab("Age of the customer") +
+  ylab("Log of the empirical mean number in the flags") +
+  theme_minimal() +
+  labs(caption = "Created by Siyi Du, Highland Consulting Group")
+
+ggarrange(sca1, sca2, 
+          labels = c("A","B"),
+          ncol = 2, nrow = 1) 
+```
+
+Then, in order to check the assumption for normality of random effect, we plot a histogram to see the distribution of random effects for the id of customers. As shown in Figure 14, the distribution is approximately normal, with mean centered round 0 and a standard deviation of 0.04623. 
+
+```{r, fig.cap = "Scatter plot of random effects for customer id", fig.width=6, fig.height=3,echo=FALSE,message=FALSE}
+# check normality for random effect
+re.int <- ranef(model4)$`cust_id`[["(Intercept)"]]
+re <- data.frame(re.int)
+
+re %>% ggplot(aes(x= re.int)) +
+  geom_histogram(bins = 20, color = "black", fill = "grey") +
+  xlab("Random Effect") +
+  theme_minimal() +
+  labs(caption = "Created by Siyi Du, Highland Consulting Group")
+```
+
+Moreover, graph below is the Residuals VS. Fitted Value plot for our final model. The smooth curved pattern may due to the log-link function, but since there are no other unusual patterns observed, we could say that the constant variance assumption is slightly violated but is tenable.
+
+```{r, fig.cap = "Residual plot of the final model", fig.width=6, fig.height=3,echo=FALSE, warning=FALSE}
+# check constant variance
+fitted <- fitted(model4)
+summ_res <- summary(model4)$residuals
+residual <- data_frame(fitted, summ_res)
+
+residual %>% ggplot(aes(x= fitted, y= summ_res)) +
+  geom_point() +
+  xlab("Fitted Values") +
+  ylab("Residuals") +
+  theme_minimal() +
+  labs(caption = "Created by Siyi Du, Highland Consulting Group")
+```
+
+
+### Model interperation
+
+After considering the possible covariates, interactions, random effect and checking the assumptions, the final model we obtained is as follows: 
+$$ log(\frac{\lambda_{flags}}{duration}) = \beta_0 + \beta_1 X_{emoji} + \beta_2 X_{age\_scale} + U_{cust\_id}$$ where:
+
+- $\frac{\lambda_{flags}}{duration}$ represents the mean quality flag rate of customers' sleep sessions;
+- $X_{emoji}$ represents the emoji variable, which includes different skin tone types for emoji;
+- $X_{age\_scale}$ represents the scaled age variable, which scales the age from 18 and 92 to 0 and 1;
+- $U_{cust\_id}$ represents the random effect of the id of each customer.
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, cache = TRUE}
+# exp estimates
+ests <- format(round((exp(summary(model4)$coeff)[,1]),4), nsmall = 2)
+
+# exp CI
+ci <- confint(model4)
+cis <- format(round(exp(ci),4)[-1,], nsmall = 2)
+cis_table <- str_c("(", trimws(cis[,1]), ", ", cis[,2], ")")
+
+inf_table <- cbind(ests, cis_table)
+rownames(inf_table) <- c("Baseline odds", "Medium dark emoji", "Medium emoji", "Medium light emoji", "Light emoji", "Scaled Age")
+colnames(inf_table) <- c("Estimate", "95% CI")
+
+# exp table
+knitr::kable(inf_table, 
+             caption = "Exponentiated Estimated coefficients and confidence interval for Model 4", 
+             align = c("r", "r"))%>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Table 15 above summarizes estimated coefficients and confidence intervals for the predictors in our model after exponentiation. The estimated intercept of our model is `r as.numeric(ests[1])`, which means a dark skin colored person who is about 18-year-old (scaled age = 0) would have a `r as.numeric(ests[1])*100` % mean flag rate during the record of a sleep session by a MINGAR device. In other words, if the duration of his/her sleep session is 8 hours (480 minutes), on average quality flags will appear about `r 480*as.numeric(ests[1])` times. The estimated coefficient, `r as.numeric(ests[2])`, for medium dark emoji means that the mean quality flag rate of a person with medium dark skin is approximately `r round(as.numeric(ests[2]),2)` times that of a person with dark skin, when they are at the same age (A 95% confidence interval from 48 to 52% lower odds). Similarly, the estimated coefficient for light skin, `r as.numeric(ests[5])`, means that a person with medium skin tone will have about `r round(as.numeric(ests[5]),2)` lower average quality flag rate (A 95% confidence interval from -2.424 to -2.356) of a person with dark skin, at the same age. Closer inspection of the table shows that as one's skin gets lighter, the average quality flag rate will decrease if they have the same age because the estimated coefficients decreases. 
+
+For another covariate, scaled age, its exponentiated estimated coefficient is 0.9515, which means that holding skin tone constant, the average flag rate for a customer aged 92 (scaled age = 1) is about 5% lower than that for a customer aged 18 (scaled age = 0). Also, we are 95% confident that the mean flag rate decreases between 1.32% and 8.26% for customers of the same skin color at age 92 compared to age 18.
+
+\
+
+All analysis for this report was programmed using `R version 4.0.4`.Packages used for this report include `dplyr::tidyverse`(Wickham et al., 2021), `ggpubr`(Kassambara, 2020), `ggplot2`(Wickham, 2016), `cowplot`(Wilke, 2020), `ggiraphExtra`(Moon, 2020), `gridExtra`(Auguie, 2017), `knitr::kable`(Xie, 2021), `kableExtra`(Zhu, 2021), `polite`(Perepolkin, 2019), `rvest`(Wickham, 2021), `cancensus`(Bergmann et al., 2021), `haven`(Wickham and Miller, 2021), `lme4`(Bates et al., 2015), and `lmtest`(Zeileis and Hothorn, 2002) packages.
+
+
+
+## Discussion
+
+### Conclusion
+
+In sum, this report mainly focuses on two goals. First, we aim to examine MINGAR’s customers distribution towards different types of devices and whether their newly developed devices with Active/Advance line will increase their shares of the market through broadening customer varieties. Combining the graphs displayed above and specific model analyzed, we confirm that the age, income, and regional address of customers have strong relationship with the type of device they purchased. Specifically, people younger than 30 years old and older than 60 years are more attracted by the MINGAR’s Active/Advance devices. Moreover, their affordable prices indeed entices new customers with lower income, particularly attracts new buyers with income around 50000 and 60000 dollars. In addition, customers’ regional address is also strongly associated with the purchases of new products. Such information will be crucial to help MINGAR further develop their market. By analyzing the regional information of customers, the company can quickly and efficiently decide where to increase the inventory of new devices, and where to open up stores for traditional devices. 
+
+Secondly, we explored the possibility of differences in the quality flags between the skin tone and age of customers, controlling for sleep duration. Together the results provide important insights into the association between skin tone and quality flag rates during the monitor of sleep sessions by MINGAR devices. Darker skins are more likely to have more quality flags compared to lighter skin tones. There is also an association between age and count of quality flags: as age increases, the chances of getting a quality flag decreases. However, this difference is not significant. The most important thing we need to be aware of that is our device is likely to perform worse on darker skin consumers. Therefore, there might be potential deficiencies of our devices, and the technical department and the product development department should investigate and improve the defects of the related products as soon as possible, because this problem may bring public opinion about racial inequality, thus affect the reputation of MINGAR and drastically reduce the sales of MINGAR products. 
+
+### Strength
+
+In general, we provided thorough and precise analyzations through both plots and concise models. We provided rigorous graphic illustration on the relation between customers information and MINGAR's device types and potential correlation between customers' characteristics. Moreover, we built simple yet efficient models through comparison and careful consideration on potential factors, selecting significant predictors for analysis. In the end, our models are well-organized, and not over-fitting with futile values.
+
+### Limitation
+
+Nevertheless, several limitations appeared during the study. 
+
+- First, there exists some inputting errors in the data set when matching postal code with CSDuid. In this data set, some of the postal codes have been matched with numerous different CSDuid, which would be impossible. In order to perform our data, we filtered out and select the largest CSDuid to match with the postal code, assume it to be the correct match. However, this may create uncertainty and unknown error to further analyze as we don’t know the true match. 
+
+- Second, each CSDuid is matched with a median income of the area it includes. While we are analyzing our customer information, we assume that the median income of each CSDuid will be the income of the customers, yet this is not accurate and causes numerous customers to have a same income. 
+
+- Third, when calculating the age of customers, we use the current year to subtract the birth year of each customer to get their age. However, we should notice that their current age is not the age that the customers actually purchase the devices. Since there is no other way to find out the accurate information, we will be assuming this age as a substitution. 
+
+- Fourth, we have used skin tones of emojis sent by customers as an identifier of their ethnicity, which might not be always accurate. For instance, an asian person can also use emojis with dark skins. 
+
+- Fifth, even though we have improve the potential overdispersion caused by the differences between mean and variances of flag by adding an offset, it is not guaranteed that the problem of overdispersion had been fully solved. Alternative ways like using a quasi-poisson or negative binomial regression model can also be used to improve the model. 
+
+- Sixth, for the GLMM model, the assumption of constant variance has a slight violation and the customer id shares little information but it is tenable. Subsequently, more data need to be provided to choose better random effects or try other models to solve the problem.
+
+- Last, there might be other variables which may cause quality flags. For example, climate factors(such as temperatures and humidity level) and characteristics of customers (like weight), might also affect the performance of our device. Even though we have considered the location of consumers during model selection process, it seems that it does not really related to the response. It is also worth noting that we only have data for January, which may result in minimal difference in climate of each observation. Therefore, if we could get access to more information of customers and the environment when the device is operating and more data across multiple months, we might have a better insight on the potential deficiencies of MINGAR devices.
+
+
+
+\newpage
+# Consultant information
+## Consultant profiles
+
+**Liuyi Pan**. Liuyi is a junior consultant with Highland Consulting Group. She specializes in data visualization. Liuyi earned her Bachelor of Science, Specialist in Mathematics & Its Applications Specialist (Probability/Statistics), from the University of Toronto in 2023.
+
+**Siyi Du**. Siyi is a junior consultant with Highland Consulting Group. She specializes in reproducible analysis. Siyi earned their Bachelor of Science, Majoring in Statistics from the University of Toronto in 2023.
+
+**Qianyu Fan**. Qianyu is a junior consultant with Highland Consulting Group. She specializes in statistical communication. Qianyu earned their Bachelor of Science, Specialist in Statistical Science: Methods and Practice from the University of Toronto in 2024.
+
+**Chenyang Li**. Chenyang is a junior consultant with Highland Consulting Group. She specializes in statistical modeling. Chenyang earned their Bachelor of Science, Majoring in Mathematics and Economics from the University of Toronto in 2022.
+
+## Code of ethical conduct
+
+The Highland Consulting Group follows ethical statistical practices and strives to demonstrate professional integrity and high standards of conduct through our work. We are guided by the following norms:
+
+- We recognize any statistical assumptions and data cleaning processes and we report and cite sources of data used.
+- Be honest with limitations, flaws, potential biases, confounding variables, and possible errors. The findings and results are interpreted truthfully and in a relevant manner for our clients and users.
+- The privacy of the customer is paramount in all of our statistical work. We adhere to the confidentiality agreements established by our employers and ensure that data and findings are not disclosed to others without the client's permission.
+- We safeguard confidential documents and information of clients rather than using it for personal interests.
+- We place the clients' integrity and the interests ahead of ours and protect the client's reputation and properties.
+- Be transparent with clients in alternative statistical consulting services and the scope, cost, and precision of each.
+
+\newpage
+# References
+
+- Achim Zeileis, Torsten Hothorn (2002). *Diagnostic Checking in Regression Relationships*. R News 2(3), 7-10. URL [https://CRAN.R-project.org/doc/Rnews/](https://CRAN.R-project.org/doc/Rnews/)
+
+- Alboukadel Kassambara (2020). *ggpubr: 'ggplot2' Based Publication Ready Plots*. R package version 0.4.0. [https://CRAN.R-project.org/package=ggpubr](https://CRAN.R-project.org/package=ggpubr)
+
+- Baptiste Auguie (2017). *gridExtra: Miscellaneous Functions for "Grid" Graphics*. R package version 2.3. [https://CRAN.R-project.org/package=gridExtra](https://CRAN.R-project.org/package=gridExtra)
+
+- Claus O. Wilke (2020). cowplot: Streamlined Plot Theme and Plot Annotations for 'ggplot2'. R package version 1.1.1.
+ [https://CRAN.R-project.org/package=cowplot](https://CRAN.R-project.org/package=cowplot)
+
+- Dmytro Perepolkin (2019). *polite: Be Nice on the Web*. R package version 0.1.1. [https://CRAN.R-project.org/package=polite](https://CRAN.R-project.org/package=polite)
+
+- Douglas Bates, Martin Maechler, Ben Bolker, Steve Walker (2015). *Fitting Linear Mixed-Effects Models Using lme4*. Journal of Statistical Software, 67(1), 1-48.
+  doi:10.18637/jss.v067.i01.
+
+- Fitness tracker info hub. (2021). Retrieved April 2, 2022, from [https://fitnesstrackerinfohub.netlify.app/](https://fitnesstrackerinfohub.netlify.app/)
+
+- Hadley Wickham (2021). *rvest: Easily Harvest (Scrape) Web Pages*. R package version 1.0.1. [https://CRAN.R-project.org/package=rvest](https://CRAN.R-project.org/package=rvest)
+
+- Hadley Wickham and Evan Miller (2021). *haven: Import and Export 'SPSS', 'Stata' and 'SAS' Files*. R package version 2.4.3.
+  [https://CRAN.R-project.org/package=haven](https://CRAN.R-project.org/package=haven)
+
+- Hadley Wickham, Romain François, Lionel Henry and Kirill Müller (2021). *dplyr: A Grammar of Data Manipulation*. [https://dplyr.tidyverse.org](https://dplyr.tidyverse.org), [https://github.com/tidyverse/dplyr](https://github.com/tidyverse/dplyr).
+
+- Hao Zhu (2021). *kableExtra: Construct Complex Table with 'kable' and Pipe Syntax*. [http://haozhu233.github.io/kableExtra/](http://haozhu233.github.io/kableExtra/),
+[https://github.com/haozhu233/kableExtra](https://github.com/haozhu233/kableExtra).
+
+- H. Wickham.(2016). *ggplot2: Elegant Graphics for Data Analysis*. Springer-Verlag New York.
+
+- Keon-Woong Moon (2020). *ggiraphExtra: Make Interactive 'ggplot2'*. Extension to 'ggplot2' and 'ggiraph'. R package version 0.3.0.
+  [https://CRAN.R-project.org/package=ggiraphExtra](https://CRAN.R-project.org/package=ggiraphExtra)
+
+- *Population density*. Census Mapper. (2016). Retrieved April 2, 2022, from [https://censusmapper.ca/](https://censusmapper.ca/)
+
+- Postal code conversion file: 2016 census geography. (2021, September). University of Toronto Map and Data Library.Retrieved April 2, 2022, from [https://mdl.library.utoronto.ca/collections/numeric-data/census-canada/postal-code-conversion-file/2016](https://mdl.library.utoronto.ca/collections/numeric-data/census-canada/postal-code-conversion-file/2016). 
+
+- Unicode, Inc. (2022). Full emoji modifier sequences, V14.0 - unicode. Emoji Charts. Retrieved April 3, 2022, from [https://www.unicode.org/emoji/charts/full-emoji-modifiers.html](https://www.unicode.org/emoji/charts/full-emoji-modifiers.html)
+
+- von Bergmann, J., Dmitry Shkolnik, and Aaron Jacobs (2021). *cancensus: R package to access, retrieve, and work with Canadian Census data and geography*. v0.4.2.
+
+- Yihui Xie (2021). *knitr: A General-Purpose Package for Dynamic Report Generation in R.* R package version 1.34.
+
+
+\newpage
+# Appendix
+
+## Web scraping industry data on fitness tracker devices
+
+We scraped the data related to the MINGAR and Bitfit fitness tracker devices form the Fitness tracker info hub website (2021). In order to comply with the ethical requirements given in `robots.txt`, we provide information and contact details and ensure that the crawl is delayed to one page every 12 seconds.
+
+## Accessing Census data on median household income
+
+We used a public API (Census Mapper, 2016) that provides the census data of Canada in 2016. After getting all regions at the 2016 census, we filtered out those that are not municipalities. For the remaining regions, we only selected three variables we needed: the Census Subdivision ID, household median income and population for the purpose of our research.
+
+## Accessing postcode conversion files
+
+As a student from university of Toronto, we had access to a Census Canada Postal Code Conversion Files (UofT MDL Library, 2021). After accepting a license agreement to get access to the data, we downloaded Census Canada Postal Code Conversion data of August 2021 in .sav file version and only selected two variables from the dataset: postcode and its corresponding Census Subdivision ID for the purpose of our research.
+

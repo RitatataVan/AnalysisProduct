@@ -1,0 +1,199 @@
+---
+title: "Data preparation"
+output:
+  pdf_document: default
+---
+
+# Instructions
+
+- You only need to submit the .Rmd of this file, not a PDF.
+
+- You should __comment__ your code clearly to show what you've done to prepare the data.
+
+- The purpose of this file is to use the data in the `data-raw` folder to create the data you will use in the report. The data you will use in the report should be saved in the `data` folder. It is good professional practice to make sure you're never directly modifying your raw data, but instead creating new datasets based on merges/manipulations that you need to reuse.
+
+- Make sure you've taken a look at the hints for the web scraping and census API. 
+
+- You may find the `write_rds()` function from the `readr` package helpful (it is loaded as part of the `tidyverse`).
+
+- You do not need to keep the structure below.
+
+# Set up
+
+```{r, libraries}
+# Set up any libraries you need
+library(tidyverse)
+library(lubridate)
+
+library(polite)
+library(rvest)
+library(cancensus)
+library(haven)
+library(geojsonsf)
+```
+
+
+# Loading client data
+```{r}
+cust_dev <- read_rds("data-raw/cust_dev.Rds")
+cust_sleep <- read_rds("data-raw/cust_sleep.Rds")
+customer <- read_rds("data-raw/customer.Rds")
+device <- read_rds("data-raw/device.Rds")
+```
+
+
+# Getting external data
+## Web scraping industry data
+```{r}
+# URL for the fitness tracker info
+url <- "https://fitnesstrackerinfohub.netlify.app/"
+
+# informative user_agent details
+target <- bow(url,
+              user_agent = "liuyi.pan@mail.utoronto.ca for STA303/1002 project",
+              force = TRUE)
+target
+
+# get device data
+html <- scrape(target)
+
+device_data <- html %>% 
+  html_elements("table") %>% 
+  html_table() %>% 
+  pluck(1)
+
+write_rds(device_data, file = "data-raw/web_device.Rds")
+```
+
+## Census API
+```{r}
+options(cancensus.api_key = Sys.getenv("cancensus_key"),
+        cancensus.cache_path = "cache") # this sets a folder for your cache
+
+
+# get all regions as at the 2016 Census (2020 not up yet)
+regions <- list_census_regions(dataset = "CA16")
+
+regions_filtered <-  regions %>% 
+  filter(level == "CSD") %>% # Figure out what CSD means in Census data
+  as_census_region_list()
+
+# This can take a while
+# We want to get household median income
+census_data_csd <- get_census(dataset='CA16', regions = regions_filtered,
+                          vectors=c("v_CA16_2397"), 
+                          level='CSD', geo_format = "sf")
+
+# Simplify to only needed variables
+median_income <- census_data_csd %>% 
+  as_tibble() %>% 
+  select(CSDuid = GeoUID, contains("median"), Population) %>% 
+  mutate(CSDuid = parse_number(CSDuid)) %>% 
+  rename(hhld_median_inc = 2)
+
+write_rds(median_income, file = "data-raw/median_income.Rds")
+```
+
+## Postal code conversion data
+```{r}
+# get postcode data
+postcode <- read_sav("data-raw/pccfNat_fccpNat_082021sav.sav", col_select= c("PC","CSDuid"))
+
+write_rds(postcode, file = "data-raw/postcode.Rds")
+```
+
+
+# Data Cleaning for question 1
+```{r, include=FALSE}
+# join postcode with median_income by CSDuid, use postcode as the main data set and we want every postal code to match with a CSDuid for the purpose of further merging with customer's data.
+postcode_medincome <- postcode %>%
+  distinct_all() %>% # delete rows that are completely the same.
+  group_by(PC) %>%
+  summarise(CSDuid = max(CSDuid)) %>% # eliminate errors from data: assume the largest CSD is true under the same postal code.
+  left_join(median_income) %>% # merge the median income per CSDuid to postcode
+  select(PC, hhld_median_inc) %>% # drop CSDuid and Population as they are futile
+  drop_na() #remove NA terms
+
+# join device with device_data to get specific device information for each device id.
+device_fin <- device %>%
+  left_join(rename(device_data, 
+                   c("device_name"="Device name","line"="Line"))) %>%
+  select(-Released) # drop duplicated column
+
+# join all useful data to customer data to make the ultimate data set.
+cust_info <- customer %>%
+  left_join(rename(postcode_medincome, "postcode"="PC")) %>% # rename column for the purpose of matching during merge
+  left_join(cust_dev) %>%
+  left_join(device_fin) %>%
+  select(-emoji_modifier) %>% # drop the column that is not needed
+  drop_na() # remove NA terms
+
+#Add regional address of customers to data set by their postal code.
+new <- c("A","B","C","E","G","H","J","K","L","M","N","P","R","S","T","V","X","Y")
+Region <- c("Newfoundland_Labrador","Nova_Scotia", "Prince_Edward", 
+            "New_Brunswick", "Quebec", "Quebec","Quebec", "Ontario", "Ontario",
+            "Ontario","Ontario", "Ontario", "Manitoba","Saskatchewan", 
+            "Alberta", "BC","Nunavut", "Yukon")
+temp <- data.frame(new, Region) # create a data set that match the postal code with regions and prepare to merge it
+cust_info <- cust_info %>%
+  mutate(new = gsub("([A-Z)]+)\\d+.*","\\1", postcode)) %>% # create a temporary column that take out the first letter of postal code of each customer, which is needed to identify regions.
+  left_join(temp) %>% # join the regional data set to customer data set to find regional addresses
+  select(-new)# remove the column that is no longer needed
+
+# further clean and improve the data set
+cust_info <- cust_info %>%
+  mutate(age = 2022 - year(dob)) %>% # add the age of each customers 
+  rename("Median_income"="hhld_median_inc") %>% # clean up some names of columns
+  rename("retail_price"="Recommended retail price") %>% 
+  mutate(Active_Advance = if_else(line %in% c("Active","Advance"), 
+                                  "Active_Advance", "Traditional")) %>% # add column that present whether the customer purchases a new device or traditional one.
+  mutate(Act_count = recode(Active_Advance, Active_Advance=1, Traditional=0)) # modify the previous column and reorder it in form of 1s and 0s.
+  #mutate(sex = fct_relevel(sex, "Male", after=1))
+  #fct_relevel(Active_Advance, "Active","Advance","Traditional")
+
+cust_info <- cust_info %>% select(cust_id, sex, Median_income, device_name, line, retail_price, age, Active_Advance, Act_count, Region) 
+new_cust_info <- cust_info %>% 
+  filter(Active_Advance == "Active_Advance")
+
+write_rds(cust_info, file = "data/cust_info.Rds")
+write_rds(new_cust_info, file = "data/new_cust_info.Rds")
+```
+
+
+# Data Cleaning for question 2
+```{r}
+# merge sleep data with customers' info and devices' name
+customer_sleep <- left_join(cust_sleep, customer, by="cust_id")
+cust_device <- left_join(cust_dev, device, by="dev_id")
+cust_join <- left_join(customer_sleep, cust_device, by="cust_id")
+cust_join <- cust_join %>%
+  mutate(new = gsub("([A-Z)]+)\\d+.*","\\1", postcode)) %>% 
+  left_join(temp, by="new") # same process above to add region variable
+
+# clean the merged data
+cust_clean <- cust_join %>% 
+  mutate(age = 2022 - year(dob)) %>%  # add age variable
+  mutate(age_group = case_when(age < 20 ~ "<20",
+                               age >= 20 & age < 30 ~ "20~29",
+                               age >= 30 & age < 40 ~ "30~39",
+                               age >= 40 & age < 50 ~ "40~49",
+                               age >= 50 & age < 60 ~ "50~59",
+                               age >= 60 & age < 70 ~ "60~69",
+                               age >= 70 ~ ">=70")) %>%  # divide age into 7 age groups
+  mutate(age_scale = scales::rescale(age)) %>% # rescale the age
+  mutate(emoji = case_when(emoji_modifier == "U+1F3FB" ~ "light",
+                           emoji_modifier == "U+1F3FC" ~ "medium_light",
+                           emoji_modifier == "U+1F3FD" ~ "medium",
+                           emoji_modifier == "U+1F3FE" ~ "medium_dark",
+                           emoji_modifier == "U+1F3FF" ~ "dark")) %>% # add emoji variable indicating colors
+  mutate(age_group = fct_relevel(age_group, "<20", "20~29", "30~39", "40~49", "50~59", "60~69", ">=70")) %>%  # relevel the age_group
+  mutate(emoji = fct_relevel(emoji, "dark", "medium_dark", "medium", "medium_light", "light")) %>% # relevel the emoji 
+  mutate(sex = fct_relevel(sex, "Male", "Female", "Intersex")) # relevel the sex
+
+cust_clean <- na.omit(cust_clean) # remove NA
+cust_clean <- cust_clean %>% 
+  select(cust_id, flags, emoji, age, age_scale, age_group, sex, pronouns, device_name, Region, duration, date)
+
+write_rds(cust_clean, file = "data/cust_clean.Rds") 
+```
+
